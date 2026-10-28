@@ -135,6 +135,37 @@ def window_screen():
     return s
 
 
+def powerline_screen():
+    s = Screen(40, 9, "W", "k")
+    x = 1
+    left = [(" \ue0a2 ~ ", "W", "r"), (" src ", "k", "w"), (" \ue0a0 main ", "k", "G")]
+    for i, (text, fg, bg) in enumerate(left):
+        s.put(x, 1, text, fg, bg)
+        x += len(text)
+        s.put(x, 1, "\ue0b0", bg, left[i + 1][2] if i + 1 < len(left) else "k")
+        x += 1
+    x = 21
+    right = [(" py 3.12 ", "W", "B"), (" \ue0a1 42:7 ", "k", "C")]
+    for i, (text, fg, bg) in enumerate(right):
+        s.put(x, 3, "\ue0b2", bg, right[i - 1][2] if i else "k")
+        s.put(x + 1, 3, text, fg, bg)
+        x += len(text) + 1
+    s.put(1, 5, "a \ue0b1 b \ue0b1 c  d \ue0b3 e  f \ue0b5 g \ue0b7 h  i \ue0b9 j \ue0bb k", "w", "k")
+    x = 1
+    for text, fg, bg in [(" \ue0a0 main ", "k", "G"), (" ~/src ", "W", "b")]:
+        s.put(x, 7, "\ue0b6", bg, "k")
+        s.put(x + 1, 7, text, fg, bg)
+        x += len(text) + 1
+        s.put(x, 7, "\ue0b4", bg, "k")
+        x += 2
+    for text, fg, bg, nxt in [(" a ", "W", "r", "Y"), (" b ", "k", "Y", "m"), (" c ", "W", "m", "k")]:
+        s.put(x, 7, text, fg, bg)
+        x += len(text)
+        s.put(x, 7, "\ue0b8", bg, nxt)
+        x += 1
+    return s
+
+
 def table_screen():
     s = Screen(32, 16, "W", "k")
     cps = cp437_codepoints()
@@ -172,7 +203,7 @@ def main():
         img.paste(b, (a.width + gap, 0))
         return img
 
-    blocks = [pair(code_screen()), pair(window_screen()), pair(table_screen())]
+    blocks = [pair(code_screen()), pair(window_screen()), pair(powerline_screen()), pair(table_screen())]
     z = zoom_screen()
     for i in range(z.rows):
         line = Screen(z.cols, 1)
