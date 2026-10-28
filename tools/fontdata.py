@@ -4,11 +4,13 @@ Layers, later ones winning: box drawing/blocks scaled from the reference,
 the smoothed seed (glyphs/font16x32.txt), composites (an accented letter
 whose reference is an ASCII letter plus marks above reuses that letter's final
 16x32 shape, even when the composite itself is hand-drawn), hand-drawn glyphs
-(glyphs/hand16x32.txt).
+(glyphs/hand16x32.txt). Powerline glyphs (tools/powerline.py) are added
+on top, outside CP437.
 """
 import os
 
 from glyphfile import read_glyphs, to_grid
+import powerline
 from seed import is_generated
 
 
@@ -22,6 +24,9 @@ def load_reference():
     for g in read_glyphs("glyphs/vga8x16.txt"):
         for cp in g["codepoints"]:
             out[cp] = to_grid(g["rows"])
+    for g in powerline.load_8x16():
+        for cp in g["codepoints"]:
+            out[cp] = g["grid"]
     return out
 
 
@@ -69,6 +74,7 @@ def load_glyphs():
         assert len(grid) == 32 and all(len(r) == 16 for r in grid), f"{name}: bad size"
         codepoints = sorted(cp for g in group for cp in g["codepoints"])
         glyphs.append({"name": name, "codepoints": codepoints, "grid": grid})
+    glyphs += powerline.load_16x32()
     return glyphs
 
 
