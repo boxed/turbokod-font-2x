@@ -3,9 +3,10 @@
     python tools/build_ttf.py out/font.ttf [--strike ebdt|bdat|both|none] [--family NAME]
 
 Outlines are unions of whole pixel squares (64 units per pixel, 2048 upem).
-The original 8x16 reference bitmaps are embedded as a 16 ppem bitmap strike
-(--strike none leaves it out), so renderers that honor embedded bitmaps draw the original font at
-16px and the 16x32 outlines at larger sizes. ebdt writes the OpenType
+Two bitmap strikes are embedded (--strike none leaves them out): the original 8x16
+reference bitmaps at 16 ppem, and a 12x24 version of the design at 24 ppem
+(tools/project24.py), so renderers that honor embedded bitmaps draw crisp pixels at
+16px and 24px and the 16x32 outlines at other sizes. ebdt writes the OpenType
 EBDT/EBLC tables, bdat writes Apple's bdat/bloc, both writes both.
 
 The default is ebdt: CoreText honors either table pair on its own (tools/strike_test.py
@@ -21,6 +22,7 @@ from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import newTable
 
 from fontdata import load_glyphs, load_reference
+from project24 import project as project24
 from smooth import corners, trace
 
 UNIT = 64  # font units per pixel at the 32px design size
@@ -50,39 +52,42 @@ def draw_glyph(grid):
     return pen.glyph()
 
 
-def strike_xml(tag, glyph_order, bitmaps):
-    """TTX XML for an EBLC/EBDT (or bloc/bdat) pair with one 16 ppem strike."""
+def strike_xml(tag, glyph_order, strikes):
+    """TTX XML for an EBLC/EBDT (or bloc/bdat) pair; strikes is a list of
+    (ppem, ascent, descent, width, bitmaps), smallest ppem first."""
     loc_tag, data_tag = {"ebdt": ("EBLC", "EBDT"), "bdat": ("bloc", "bdat")}[tag]
-    line_metrics = "".join(
-        f'<{name} value="{value}"/>'
-        for name, value in [("ascender", STRIKE_ASCENT), ("descender", -STRIKE_DESCENT),
-                            ("widthMax", CELL_W // 2), ("caretSlopeNumerator", 1),
-                            ("caretSlopeDenominator", 0), ("caretOffset", 0), ("minOriginSB", 0),
-                            ("minAdvanceSB", 0), ("maxBeforeBL", STRIKE_ASCENT),
-                            ("minAfterBL", -STRIKE_DESCENT), ("pad1", 0), ("pad2", 0)])
     last = len(glyph_order) - 1
     locs = "".join(f"<glyphLoc name={quoteattr(name)}/>" for name in glyph_order)
-    eblc = (
-        f'<{loc_tag}><header version="2.0"/><strike index="0"><bitmapSizeTable>'
-        f'<sbitLineMetrics direction="hori">{line_metrics}</sbitLineMetrics>'
-        f'<sbitLineMetrics direction="vert">{line_metrics}</sbitLineMetrics>'
-        f'<colorRef value="0"/><startGlyphIndex value="0"/><endGlyphIndex value="{last}"/>'
-        f'<ppemX value="{STRIKE_PPEM}"/><ppemY value="{STRIKE_PPEM}"/><bitDepth value="1"/><flags value="1"/>'
-        f'</bitmapSizeTable><eblc_index_sub_table_1 imageFormat="1" firstGlyphIndex="0" '
-        f'lastGlyphIndex="{last}">{locs}</eblc_index_sub_table_1></strike></{loc_tag}>'
-    )
-    metrics = (f'<SmallGlyphMetrics><height value="{STRIKE_PPEM}"/><width value="{CELL_W // 2}"/>'
-               f'<BearingX value="0"/><BearingY value="{STRIKE_ASCENT}"/>'
-               f'<Advance value="{CELL_W // 2}"/></SmallGlyphMetrics>')
-    glyphs = []
-    for name in glyph_order:
-        rows = "".join(
-            '<row value="%s"/>' % "".join("@" if v else "." for v in row) for row in bitmaps[name])
-        glyphs.append(f'<{tag}_bitmap_format_1 name={quoteattr(name)}>{metrics}'
-                      f'<bitwiseimagedata bitDepth="1" width="{CELL_W // 2}" height="{STRIKE_PPEM}">'
-                      f'{rows}</bitwiseimagedata></{tag}_bitmap_format_1>')
-    ebdt = f'<{data_tag}><header version="2.0"/><strikedata index="0">{"".join(glyphs)}</strikedata></{data_tag}>'
-    return eblc + ebdt
+    tables, datas = [], []
+    for index, (ppem, ascent, descent, width, bitmaps) in enumerate(strikes):
+        line_metrics = "".join(
+            f'<{name} value="{value}"/>'
+            for name, value in [("ascender", ascent), ("descender", -descent),
+                                ("widthMax", width), ("caretSlopeNumerator", 1),
+                                ("caretSlopeDenominator", 0), ("caretOffset", 0), ("minOriginSB", 0),
+                                ("minAdvanceSB", 0), ("maxBeforeBL", ascent),
+                                ("minAfterBL", -descent), ("pad1", 0), ("pad2", 0)])
+        tables.append(
+            f'<strike index="{index}"><bitmapSizeTable>'
+            f'<sbitLineMetrics direction="hori">{line_metrics}</sbitLineMetrics>'
+            f'<sbitLineMetrics direction="vert">{line_metrics}</sbitLineMetrics>'
+            f'<colorRef value="0"/><startGlyphIndex value="0"/><endGlyphIndex value="{last}"/>'
+            f'<ppemX value="{ppem}"/><ppemY value="{ppem}"/><bitDepth value="1"/><flags value="1"/>'
+            f'</bitmapSizeTable><eblc_index_sub_table_1 imageFormat="1" firstGlyphIndex="0" '
+            f'lastGlyphIndex="{last}">{locs}</eblc_index_sub_table_1></strike>')
+        metrics = (f'<SmallGlyphMetrics><height value="{ppem}"/><width value="{width}"/>'
+                   f'<BearingX value="0"/><BearingY value="{ascent}"/>'
+                   f'<Advance value="{width}"/></SmallGlyphMetrics>')
+        glyphs = []
+        for name in glyph_order:
+            rows = "".join(
+                '<row value="%s"/>' % "".join("@" if v else "." for v in row) for row in bitmaps[name])
+            glyphs.append(f'<{tag}_bitmap_format_1 name={quoteattr(name)}>{metrics}'
+                          f'<bitwiseimagedata bitDepth="1" width="{width}" height="{ppem}">'
+                          f'{rows}</bitwiseimagedata></{tag}_bitmap_format_1>')
+        datas.append(f'<strikedata index="{index}">{"".join(glyphs)}</strikedata>')
+    return (f'<{loc_tag}><header version="2.0"/>{"".join(tables)}</{loc_tag}>'
+            f'<{data_tag}><header version="2.0"/>{"".join(datas)}</{data_tag}>')
 
 
 def build(path, strike=None, family=FAMILY):
@@ -130,7 +135,11 @@ def build(path, strike=None, family=FAMILY):
         reference = load_reference()
         empty = [[False] * (CELL_W // 2) for _ in range(STRIKE_PPEM)]
         bitmaps = {".notdef": empty, **{g["name"]: reference[g["codepoints"][0]] for g in glyphs}}
-        xml = "".join(strike_xml(tag, glyph_order, bitmaps)
+        empty24 = [[False] * 12 for _ in range(24)]
+        bitmaps24 = {".notdef": empty24, **{g["name"]: project24(g["grid"], g["codepoints"][0]) for g in glyphs}}
+        strikes = [(STRIKE_PPEM, STRIKE_ASCENT, STRIKE_DESCENT, CELL_W // 2, bitmaps),
+                   (24, 18, 6, 12, bitmaps24)]
+        xml = "".join(strike_xml(tag, glyph_order, strikes)
                       for tag in (["ebdt", "bdat"] if strike == "both" else [strike]))
         os.makedirs("scratch", exist_ok=True)
         xml_path = "scratch/strike.ttx"
